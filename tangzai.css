@@ -87,6 +87,19 @@
 /* 设置面板样式 */
 .tangzai-settings-panel {
     border-top: 3px solid var(--tangzai-primary);
+    position: fixed;
+    z-index: 1001;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    display: none;
+    overflow-y: auto;
 }
 
 .settings-input {
@@ -104,16 +117,35 @@
 }
 
 .settings-save-btn {
-    background-color: var(--tangzai-primary);
-    color: white;
+    padding: 8px 16px;
+    background-color: #4a6ee0;
+    color: #fff;
     border: none;
-    padding: 8px 15px;
     border-radius: 4px;
     cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
 }
 
 .settings-save-btn:hover {
-    background-color: var(--tangzai-dark);
+    background-color: #3a5ec0;
+}
+
+/* 测试连接按钮 */
+.settings-test-btn {
+    padding: 8px 16px;
+    background-color: #28a745;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-left: 10px;
+    transition: background-color 0.2s;
+}
+
+.settings-test-btn:hover {
+    background-color: #218838;
 }
 
 /* 流式回复动画效果 */
@@ -151,4 +183,15 @@
     .tangzai-banner p {
         font-size: 0.8rem;
     }
+}
+
+/* 添加API通知样式 */
+.api-notice {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    border-radius: 4px;
+    color: #856404;
+    font-size: 0.85rem;
 } 

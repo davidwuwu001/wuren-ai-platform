@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const defaultSettings = {
         apiKey: '', // 默认为空，需要用户在设置中填写
         serviceId: '', // 默认为空，需要用户在设置中填写
+        apiDomain: 'api-knowledgebase.mlp.cn-beijing.volces.com', // 火山引擎知识库API域名
+        corsProxy: 'https://cors-anywhere.herokuapp.com/', // 默认CORS代理
         streamEnabled: true,
         markdownEnabled: true
     };
@@ -33,15 +35,40 @@ document.addEventListener('DOMContentLoaded', function() {
     function initSettings() {
         apiKeyInput.value = currentSettings.apiKey || '';
         serviceIdInput.value = currentSettings.serviceId || '';
+        
+        // 如果设置面板中存在API域名输入框，则填充值
+        const apiDomainInput = document.getElementById('api-domain-input');
+        if (apiDomainInput) {
+            apiDomainInput.value = currentSettings.apiDomain || defaultSettings.apiDomain;
+        } else {
+            console.warn('未找到API域名输入框');
+        }
+        
+        // 如果设置面板中存在CORS代理输入框，则填充值
+        const corsProxyInput = document.getElementById('cors-proxy-input');
+        if (corsProxyInput) {
+            corsProxyInput.value = currentSettings.corsProxy || defaultSettings.corsProxy;
+        }
+        
         streamEnabledToggle.checked = currentSettings.streamEnabled;
         markdownEnabledToggle.checked = currentSettings.markdownEnabled;
     }
     
     // 保存设置
     function saveSettings() {
+        // 获取API域名输入框的值
+        const apiDomainInput = document.getElementById('api-domain-input');
+        const apiDomain = apiDomainInput ? apiDomainInput.value.trim() : currentSettings.apiDomain;
+        
+        // 获取CORS代理输入框的值
+        const corsProxyInput = document.getElementById('cors-proxy-input');
+        const corsProxy = corsProxyInput ? corsProxyInput.value.trim() : currentSettings.corsProxy;
+        
         currentSettings = {
             apiKey: apiKeyInput.value.trim(),
             serviceId: serviceIdInput.value.trim(),
+            apiDomain: apiDomain, // 保存API域名
+            corsProxy: corsProxy, // 保存CORS代理URL
             streamEnabled: streamEnabledToggle.checked,
             markdownEnabled: markdownEnabledToggle.checked
         };
@@ -49,6 +76,9 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.setItem('tangzaiSettings', JSON.stringify(currentSettings));
         closeSettings();
         showSystemMessage('设置已保存');
+        
+        // 测试新的设置是否能成功连接
+        setTimeout(testConnection, 1000);
     }
     
     // 打开设置面板
@@ -193,7 +223,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             showSystemMessage('正在查询知识库...');
             
-            // 构建请求参数
+            // 构建请求参数（根据火山引擎知识库API格式）
             const requestData = {
                 service_resource_id: currentSettings.serviceId,
                 stream: false,
@@ -207,6 +237,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // 构建历史消息
             if (chatHistory.length > 1) {
+                // 清空默认消息，只使用历史聊天记录
                 requestData.messages = [];
                 
                 // 只取最近的10条消息(5轮对话)，避免上下文过长
@@ -220,11 +251,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
             
-            const response = await fetch('https://api-proxy.example.com/knowledge', {
+            // 使用CORS代理服务器解决跨域问题
+            // 这里使用CORS Anywhere公共代理演示，实际使用时请替换为您自己的代理服务器
+            const corsProxy = currentSettings.corsProxy || defaultSettings.corsProxy;
+            // 使用用户设置的 API 域名
+            const apiDomain = currentSettings.apiDomain || defaultSettings.apiDomain;
+            const targetUrl = `https://${apiDomain}/api/knowledge/service/chat`;
+            const response = await fetch(`${corsProxy}${targetUrl}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${currentSettings.apiKey}`
+                    'Authorization': `Bearer ${currentSettings.apiKey}`,
+                    // 添加CORS代理所需的来源头部
+                    'Origin': window.location.origin,
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
                 body: JSON.stringify(requestData)
             });
@@ -235,17 +275,44 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const responseData = await response.json();
             
+            // 火山引擎知识库API返回格式处理
             if (responseData.code !== 0) {
                 throw new Error(`API错误: ${responseData.message}`);
             }
             
-            // 添加AI回复到聊天界面
+            // 添加AI回复到聊天界面（使用生成的答案）
             const answer = responseData.data.generated_answer || '抱歉，知识库中没有找到相关信息。';
             addAIMessage(answer);
             
         } catch (error) {
             console.error('API调用失败:', error);
-            showSystemMessage(`请求失败: ${error.message}`);
+            
+            // 提供更详细的错误信息
+            let errorMessage = `请求失败: ${error.message}`;
+            
+            // 检测是否是CORS错误
+            if (error.message.includes('Failed to fetch') || 
+                error.message.includes('NetworkError') || 
+                error.message.includes('CORS') || 
+                error.message.includes('Access-Control')) {
+                
+                errorMessage = '跨域请求被阻止，无法连接到知识库API。请联系您的系统管理员部署代理服务器或添加CORS头部。';
+                showSystemMessage(errorMessage);
+                
+                // 提供额外的建议方案
+                showSystemMessage('解决方案：1. 使用代理服务器 2. 配置服务器允许跨域 3. 使用浏览器插件如CORS Unblock');
+            } else if (error.message.includes('401') || error.message.includes('403')) {
+                errorMessage = 'API密钥无效或没有权限访问此资源。请检查您的API密钥设置。';
+                showSystemMessage(errorMessage);
+            } else {
+                showSystemMessage(errorMessage);
+            }
+            
+            // 移除流式消息占位符
+            const streamingMsg = document.querySelector('.ai-message.streaming');
+            if (streamingMsg) {
+                streamingMsg.remove();
+            }
         }
     }
     
@@ -259,7 +326,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             showSystemMessage('正在查询知识库...');
             
-            // 构建请求参数
+            // 构建请求参数（根据火山引擎知识库API格式）
             const requestData = {
                 service_resource_id: currentSettings.serviceId,
                 stream: true,
@@ -273,6 +340,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // 构建历史消息
             if (chatHistory.length > 1) {
+                // 清空默认消息，只使用历史聊天记录
                 requestData.messages = [];
                 
                 // 只取最近的10条消息(5轮对话)，避免上下文过长
@@ -290,11 +358,20 @@ document.addEventListener('DOMContentLoaded', function() {
             addAIMessage('', true);
             let accumulatedResponse = '';
             
-            const response = await fetch('https://api-proxy.example.com/knowledge/stream', {
+            // 使用CORS代理服务器解决跨域问题
+            // 这里使用CORS Anywhere公共代理演示，实际使用时请替换为您自己的代理服务器
+            const corsProxy = currentSettings.corsProxy || defaultSettings.corsProxy;
+            // 使用用户设置的 API 域名
+            const apiDomain = currentSettings.apiDomain || defaultSettings.apiDomain;
+            const targetUrl = `https://${apiDomain}/api/knowledge/service/chat`;
+            const response = await fetch(`${corsProxy}${targetUrl}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${currentSettings.apiKey}`
+                    'Authorization': `Bearer ${currentSettings.apiKey}`,
+                    // 添加CORS代理所需的来源头部
+                    'Origin': window.location.origin,
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
                 body: JSON.stringify(requestData)
             });
@@ -326,12 +403,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             const content = line.substring(5);
                             const data = JSON.parse(content);
                             
+                            // 适配火山引擎知识库API的流式响应结构
                             if (data.code === 0 && data.data && data.data.generated_answer) {
                                 const newText = data.data.generated_answer;
                                 accumulatedResponse = newText;
                                 addAIMessage(accumulatedResponse, true);
                                 
-                                // 检查是否是最后一个chunk
+                                // 检查是否有end标志
                                 if (data.data.end === true) {
                                     // 最后一次更新，去掉streaming标记
                                     addAIMessage(accumulatedResponse, false);
@@ -362,7 +440,27 @@ document.addEventListener('DOMContentLoaded', function() {
             
         } catch (error) {
             console.error('API调用失败:', error);
-            showSystemMessage(`请求失败: ${error.message}`);
+            
+            // 提供更详细的错误信息
+            let errorMessage = `请求失败: ${error.message}`;
+            
+            // 检测是否是CORS错误
+            if (error.message.includes('Failed to fetch') || 
+                error.message.includes('NetworkError') || 
+                error.message.includes('CORS') || 
+                error.message.includes('Access-Control')) {
+                
+                errorMessage = '跨域请求被阻止，无法连接到知识库API。请联系您的系统管理员部署代理服务器或添加CORS头部。';
+                showSystemMessage(errorMessage);
+                
+                // 提供额外的建议方案
+                showSystemMessage('解决方案：1. 使用代理服务器 2. 配置服务器允许跨域 3. 使用浏览器插件如CORS Unblock');
+            } else if (error.message.includes('401') || error.message.includes('403')) {
+                errorMessage = 'API密钥无效或没有权限访问此资源。请检查您的API密钥设置。';
+                showSystemMessage(errorMessage);
+            } else {
+                showSystemMessage(errorMessage);
+            }
             
             // 移除流式消息占位符
             const streamingMsg = document.querySelector('.ai-message.streaming');
@@ -410,6 +508,12 @@ document.addEventListener('DOMContentLoaded', function() {
     settingsOverlay.addEventListener('click', closeSettings);
     saveSettingsButton.addEventListener('click', saveSettings);
     
+    // 添加测试连接按钮事件监听
+    const testConnectionButton = document.getElementById('test-connection');
+    if (testConnectionButton) {
+        testConnectionButton.addEventListener('click', testConnection);
+    }
+    
     // 初始化
     initSettings();
     loadChatHistory();
@@ -417,5 +521,56 @@ document.addEventListener('DOMContentLoaded', function() {
     // 显示欢迎消息
     if (chatHistory.length === 0) {
         showSystemMessage('欢迎使用汤仔知识库助手！请在下方输入您的问题。');
+        showSystemMessage('本助手需连接到火山引擎知识库API服务。请点击设置按钮，配置您的API密钥和服务资源ID。');
+        showSystemMessage('API服务地址已默认设置为: api-knowledgebase.mlp.cn-beijing.volces.com');
+        showSystemMessage('提示：如果遇到CORS跨域问题，请在设置中配置CORS代理。');
+    }
+    
+    // 添加测试代理连接功能
+    async function testConnection() {
+        if (!currentSettings.apiKey || !currentSettings.serviceId) {
+            showSystemMessage('请先在设置中配置API密钥和服务ID');
+            return;
+        }
+        
+        try {
+            showSystemMessage('正在测试API连接...');
+            
+            const corsProxy = currentSettings.corsProxy || defaultSettings.corsProxy;
+            const apiDomain = currentSettings.apiDomain || defaultSettings.apiDomain;
+            const targetUrl = `https://${apiDomain}/api/knowledge/service/chat`;
+            
+            const response = await fetch(`${corsProxy}${targetUrl}`, {
+                method: 'HEAD',
+                headers: {
+                    'Authorization': `Bearer ${currentSettings.apiKey}`,
+                    'Origin': window.location.origin,
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            if (response.ok || response.status === 405) {
+                // 405表示Method Not Allowed，但说明服务器是可达的
+                showSystemMessage('✅ 连接测试成功！API服务器可以访问。');
+                return true;
+            } else {
+                showSystemMessage(`❌ 连接测试失败。服务器返回状态码: ${response.status}`);
+                return false;
+            }
+        } catch (error) {
+            console.error('连接测试失败:', error);
+            
+            if (error.message.includes('Failed to fetch') || 
+                error.message.includes('NetworkError') || 
+                error.message.includes('CORS') || 
+                error.message.includes('Access-Control')) {
+                showSystemMessage('❌ 连接测试失败: 跨域请求被阻止，无法连接到知识库API。');
+                showSystemMessage('建议：1. 检查代理服务器URL 2. 尝试不同的代理服务 3. 联系API提供方添加CORS支持');
+            } else {
+                showSystemMessage(`❌ 连接测试失败: ${error.message}`);
+            }
+            
+            return false;
+        }
     }
 }); 
